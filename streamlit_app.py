@@ -2,129 +2,168 @@ import streamlit as st
 from openai import OpenAI
 import pdfplumber
 
-# -----------------------------
+# -------------------------------------------------
 # PAGE CONFIG
-# -----------------------------
+# -------------------------------------------------
 st.set_page_config(
-    page_title="PaXdom Brochure QA Bot",
+    page_title="Brochure QA Bot",
     page_icon="📄",
     layout="centered"
 )
 
-# -----------------------------
-# HEADER
-# -----------------------------
-st.markdown(
-    """
-    <div style="text-align:center; margin-bottom:20px;">
-        <h1 style="margin-bottom:6px;">📄 Brochure QA Bot</h1>
-        <p style="color:#555; font-size:15px; max-width:700px; margin:auto;">
-            Upload property brochures, PDFs, or paste listing text, then ask questions.
-            Receive clear, neutral, and factual answers highlighting what is missing or unclear.
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+# -------------------------------------------------
+# GLOBAL UI FIX (NO SCROLL / NO THEME ISSUES)
+# -------------------------------------------------
+st.markdown("""
+<style>
+html, body, .stApp {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
 
-# -----------------------------
+/* Typography */
+h1, h2, h3 {
+    color: #111827 !important;
+}
+
+/* Inputs */
+textarea, input {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+}
+
+/* Buttons */
+button {
+    background-color: #111827 !important;
+    color: #ffffff !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+}
+
+/* Remove internal scrollbars */
+.main, .block-container {
+    overflow: visible !important;
+    max-height: none !important;
+}
+
+/* Markdown */
+.stMarkdown {
+    color: #111827 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------------------------------------
+# HEADER
+# -------------------------------------------------
+st.markdown("""
+<div style="text-align:center; margin-bottom:30px;">
+    <h1 style="margin-bottom:10px;">📄 Brochure QA Bot</h1>
+    <p style="
+        color:#374151;
+        font-size:15px;
+        max-width:680px;
+        margin:auto;
+        line-height:1.6;
+    ">
+        Upload property brochures, PDFs, or paste listing text.<br>
+        Ask questions and receive <b>neutral, factual answers</b> — including what is missing or unclear.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# -------------------------------------------------
 # INPUT SECTION
-# -----------------------------
+# -------------------------------------------------
 st.markdown("### 🧾 Provide Brochure or Listing Details")
 
-# PDF Upload
 uploaded_file = st.file_uploader(
-    "Upload PDF brochure or property document (optional)",
-    type=["pdf"],
-    help="PDFs can be property brochures, project brochures, or other official documents."
+    "Upload PDF brochure (optional)",
+    type=["pdf"]
 )
 
 pdf_text = ""
 if uploaded_file:
     try:
         with pdfplumber.open(uploaded_file) as pdf:
-            pdf_text = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
-        st.success(f"Extracted {len(pdf_text.split())} words from {uploaded_file.name}")
-    except Exception as e:
-        st.error(f"Error reading PDF: {str(e)}")
+            pdf_text = "\n".join(
+                page.extract_text()
+                for page in pdf.pages
+                if page.extract_text()
+            )
+        st.success(f"Extracted content from {uploaded_file.name}")
+    except Exception:
+        st.error("Unable to read PDF file.")
 
-# Text Area Input
 text_input = st.text_area(
-    "Or paste brochure/listing text here",
-    placeholder=(
-        "Paste WhatsApp messages, website listings, or brochure content.\n"
-        "Tip: The more complete the text, the more accurate the analysis."
-    ),
-    height=220,
-    key="brochure_text_input"
+    "Or paste brochure / listing text",
+    placeholder="Paste WhatsApp messages, website listings, or brochure content here.",
+    height=220
 )
 
-# Merge inputs
 brochure_content = "\n".join(filter(None, [pdf_text, text_input]))
 
-# Question Input
 question = st.text_input(
     "Ask a specific question about the property",
-    placeholder="Example: What is the total area? Any amenities? Possession date?",
-    key="brochure_question"
+    placeholder="Example: What is the possession date? What amenities are mentioned?"
 )
 
-# -----------------------------
-# CTA BUTTON
-# -----------------------------
+# -------------------------------------------------
+# CTA
+# -------------------------------------------------
 st.markdown("<br>", unsafe_allow_html=True)
 analyze_clicked = st.button(
     "🔍 Analyze Brochure",
     use_container_width=True
 )
 
-# -----------------------------
-# SYSTEM PROMPT (REFINED)
-# -----------------------------
+# -------------------------------------------------
+# SYSTEM PROMPT (FINAL)
+# -------------------------------------------------
 SYSTEM_PROMPT = """
-You are a neutral real estate analyst specialized in property brochures and listings.
+You are a neutral real estate analyst specializing in property brochures and listings.
 
 Your task:
-Answer user questions strictly based on the content provided (PDF text or pasted listing). 
-Do NOT assume or infer any information not explicitly present in the text. 
-Do NOT provide advice, opinions, or recommendations.
+Answer the user's question using ONLY the information explicitly present in the provided brochure or listing text.
 
-Rules:
-- Use only the information in the brochure or listing. 
-- Highlight missing, unclear, or ambiguous information clearly. 
-- Use short, simple, neutral, and factual language. 
-- Never promote, market, or sell the property.
+Strict rules:
+- Do NOT assume, infer, recommend, or advise.
+- Do NOT use general real estate knowledge.
+- If something is not clearly stated, treat it as missing.
+- Use short, neutral, factual language.
+- Never promote or market the property.
 - Never provide financial, legal, or personal advice.
-- If a question cannot be answered based on the text, explicitly state "Not mentioned in the brochure."
-- Maintain the following output structure exactly, even if some sections are empty:
 
-Output format:
+If the question asks for opinions, decisions, or judgments (e.g., “Should I buy?”),
+state clearly that the brochure does not provide decision guidance.
 
-1. Question Asked  
-   [Repeat the user’s question exactly]
+Output format (STRICT):
 
-2. Answer (based strictly on brochure content)  
-   [Provide only facts present in the text. Do NOT add assumptions or advice.]
+1. Question Asked
+   [Repeat the user question exactly]
 
-3. Missing or Unclear Information  
-   [List anything not mentioned, ambiguous, or unclear in the brochure that is relevant to the question. If everything is mentioned, write "None."]
+2. Answer (based strictly on brochure content)
+   [Facts only. If not mentioned, say: "Not mentioned in the brochure."]
 
-4. Relevant Notes / Observations  
-   [Any neutral observations strictly derived from the text. Do NOT interpret or suggest action.]
+3. Missing or Unclear Information
+   [List missing or ambiguous items relevant to the question. If none, write "None."]
+
+4. Relevant Notes / Observations
+   [Neutral observations directly derived from the text. No interpretation.]
 """
 
-# -----------------------------
-# OUTPUT SECTION
-# -----------------------------
+# -------------------------------------------------
+# OUTPUT
+# -------------------------------------------------
 if analyze_clicked:
     if not brochure_content.strip() or not question.strip():
-        st.warning("Please provide brochure text (or upload PDF) AND ask a question.")
+        st.warning("Please provide brochure text (or upload a PDF) and ask a question.")
     else:
-        with st.spinner("Analyzing brochure…"):
+        with st.spinner("Analyzing brochure objectively…"):
             client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
             user_prompt = f"""
-Brochure / Listing Content:
+Brochure Content:
 {brochure_content}
 
 User Question:
@@ -142,25 +181,27 @@ User Question:
 
         st.markdown("---")
         st.markdown("## 📊 Answer")
+
         st.markdown(
             f"""
             <div style="
-                background:#FAFAFA;
+                background:#F9FAFB;
+                color:#111827;
                 border:1px solid #E5E7EB;
-                border-radius:8px;
-                padding:20px;
-                line-height:1.6;
+                border-radius:10px;
+                padding:22px;
                 font-size:15px;
-                word-wrap:break-word;
+                line-height:1.7;
+                white-space:pre-wrap;
             ">
-            {response.choices[0].message.content}
+{response.choices[0].message.content}
             </div>
             """,
             unsafe_allow_html=True
         )
 
-# -----------------------------
+# -------------------------------------------------
 # FOOTER
-# -----------------------------
+# -------------------------------------------------
 st.markdown("---")
-st.caption("PaXdom AI Tools • Neutral analysis • Built for informed decisions")
+st.caption("Neutral analysis tool • Built for clarity, not persuasion")
